@@ -267,14 +267,12 @@ def page_question():
 
     style_radio_buttons()
 
-    all_cands = st.session_state.candidates
+    all_cands = st.session_state.candidates   # 내부 후보
     step = st.session_state.question_step
     key = ARUDHA_FLOW[step]
 
-    # 단계별 텍스트 기준으로 중복 제거
-    cands = group_candidates_for_step(all_cands, key)
-
-    st.session_state.candidates = cands
+    # UI용 후보 정리 (표시용)
+    display_cands = group_candidates_for_step(all_cands, key)
 
     # 안내문
     if key != "UL":
@@ -286,15 +284,15 @@ def page_question():
 
     st.divider()
 
-    removal = set()
+    # 이번 스텝에서 제거할 index 목록
+    removal = []
 
-    for idx, record in enumerate(cands):
+    for shown_idx, record in enumerate(display_cands):
 
         aro = record["arudha"]
         house_num = aro[key]
-        text = normalize_text(DICT_MAP[key]["house"][house_num])
 
-        # 줄바꿈 강화
+        text = normalize_text(DICT_MAP[key]["house"][house_num])
         text = text.replace("<br>", "<br><br>")
 
         st.markdown(text, unsafe_allow_html=True)
@@ -302,32 +300,36 @@ def page_question():
         selected = st.radio(
             "",
             options=["yes", "no", "maybe"],
-            key=f"q_{step}_{idx}",
+            key=f"q_{step}_{shown_idx}",
             horizontal=True
         )
 
         if selected == "no":
-            removal.add(idx)
+            # 실제 내부 후보들 중 해당 텍스트 가진 것 모두 제거 대상으로 표시
+            for real_idx, real_item in enumerate(all_cands):
+                if normalize_text(DICT_MAP[key]["house"][real_item["arudha"][key]]) \
+                        == normalize_text(DICT_MAP[key]["house"][house_num]):
+                    removal.append(real_idx)
 
         st.markdown("---")
 
     # Next / Finish 버튼
     if step == len(ARUDHA_FLOW) - 1:
-
         if st.button("Finish", use_container_width=True):
+
+            # 실제 후보 제거
             st.session_state.candidates = [
-                x for i, x in enumerate(cands) if i not in removal
+                x for i, x in enumerate(all_cands) if i not in removal
             ]
+
             st.session_state.page = "result"
             st.rerun()
-
     else:
-
         if st.button("Next", use_container_width=True):
 
-            # 여기서만 제거!
+            # 실제 후보 제거
             st.session_state.candidates = [
-                x for i, x in enumerate(cands) if i not in removal
+                x for i, x in enumerate(all_cands) if i not in removal
             ]
 
             st.session_state.question_step += 1
@@ -367,3 +369,4 @@ elif st.session_state.page == "question":
     page_question()
 elif st.session_state.page == "result":
     page_result()
+
