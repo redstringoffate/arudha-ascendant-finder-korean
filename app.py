@@ -47,17 +47,19 @@ def slot_to_label(i: int):
 
 
 # ============================================================
-# UI용 텍스트 정규화
+# 텍스트 정규화 (UI/logic 일치용)
 # ============================================================
 def normalize_text(s: str):
+    """텍스트 기반 그룹핑 오류 방지를 위한 정규화"""
     s = s.replace("<br> \n", "<br>")
     s = s.replace("<br>\n", "<br>")
     s = s.replace("<br>  \n", "<br>")
-    return s
+    s = s.replace("\n", " ")
+    return s.strip()
 
 
 # ============================================================
-# 라디오 스타일 적용
+# 라디오 버튼 스타일 적용
 # ============================================================
 def style_radio_buttons():
     st.markdown("""
@@ -66,7 +68,7 @@ def style_radio_buttons():
     div[data-baseweb="radio"] > div {
         display: flex;
         gap: 16px;
-        margin-top: 8px;
+        margin-top: 6px;
         margin-bottom: 12px;
     }
 
@@ -112,7 +114,7 @@ def page_input_times():
 
     lord_positions = {}
 
-    # 이전 slot 반영
+    # 이전 slot 값 복사
     if slot > 0 and (slot - 1) in st.session_state.transit_data:
         prev = st.session_state.transit_data[slot - 1]
 
@@ -153,14 +155,13 @@ def page_input_times():
 
 
 # ============================================================
-# 2) 후보 Asc/Arudha 생성 (중복 제거 없음)
+# 2) 후보 생성 (중복 제거 없음)
 # ============================================================
 def generate_candidates():
 
     raw = []
 
     for slot, data in st.session_state.transit_data.items():
-
         asc = data["asc"]
         houses = data["houses"]
 
@@ -184,24 +185,21 @@ def generate_candidates():
 
 
 # ============================================================
-# 3) 한 단계에 표시할 항목 (Asc + house 기반 중복 제거)
+# 3) UI용 텍스트 기반 중복 제거
 # ============================================================
-def candidates_for_display(cands, key):
-
+def ui_group_by_text(cands, key):
     seen = set()
-    result = []
+    grouped = []
 
     for item in cands:
-        asc = item["asc"]
         house_num = item["arudha"][key]
+        txt = normalize_text(DICT_MAP[key]["house"][house_num])
 
-        group_key = (asc, house_num)
+        if txt not in seen:
+            seen.add(txt)
+            grouped.append((txt, house_num, item["asc"]))
 
-        if group_key not in seen:
-            seen.add(group_key)
-            result.append(item)
-
-    return result
+    return grouped
 
 
 # ============================================================
@@ -215,8 +213,8 @@ def page_question():
     step = st.session_state.question_step
     key = ARUDHA_FLOW[step]
 
-    # UI용 후보
-    display_list = candidates_for_display(all_cands, key)
+    # UI용 중복 제거
+    display_items = ui_group_by_text(all_cands, key)
 
     # 안내문
     if key != "UL":
@@ -228,18 +226,13 @@ def page_question():
 
     st.divider()
 
-    # 이번 단계에서 제거해야 할 실제 후보 index
     removal_indices = []
 
-    for ui_idx, item in enumerate(display_list):
+    # UI 표시
+    for ui_idx, (txt, house_num, asc_sample) in enumerate(display_items):
 
-        asc = item["asc"]
-        house_num = item["arudha"][key]
-
-        text = normalize_text(DICT_MAP[key]["house"][house_num])
-        text_html = text.replace("<br>", "<br><br>")
-
-        st.markdown(text_html, unsafe_allow_html=True)
+        html_txt = txt.replace("<br>", "<br><br>")
+        st.markdown(html_txt, unsafe_allow_html=True)
 
         sel = st.radio(
             "",
@@ -249,31 +242,27 @@ def page_question():
         )
 
         if sel == "no":
-            # 실제 후보 중 동일 asc + 동일 house_num 제거
+            # 같은 텍스트 가진 후보들 전체 제거
             for real_i, c in enumerate(all_cands):
-                if c["asc"] == asc and c["arudha"][key] == house_num:
+                if normalize_text(DICT_MAP[key]["house"][c["arudha"][key]]) == txt:
                     removal_indices.append(real_i)
 
         st.markdown("---")
 
-    # Next / Finish
+    # Next or Finish
     if step == len(ARUDHA_FLOW) - 1:
         if st.button("Finish", use_container_width=True):
-
             st.session_state.candidates = [
                 x for i, x in enumerate(all_cands) if i not in removal_indices
             ]
-
             st.session_state.page = "result"
             st.rerun()
 
     else:
         if st.button("Next", use_container_width=True):
-
             st.session_state.candidates = [
                 x for i, x in enumerate(all_cands) if i not in removal_indices
             ]
-
             st.session_state.question_step += 1
             st.rerun()
 
@@ -288,7 +277,7 @@ def page_result():
     cands = st.session_state.candidates
 
     if not cands:
-        st.error("모든 후보가 제거되었습니다. 입력을 다시 확인해주세요.")
+        st.error("모든 후보가 제거되었습니다. 입력을 다시 확인하세요.")
         return
 
     asc_list = sorted(list({c["asc"] for c in cands}))
@@ -298,7 +287,8 @@ def page_result():
     for asc in asc_list:
         st.markdown(f"**{asc}**")
 
-    st.success("최종 Ascendant 후보를 도출했습니다.")
+    st.success("최종 Ascendant 후보가 도출되었습니다.")
+
 
 
 # ============================================================
